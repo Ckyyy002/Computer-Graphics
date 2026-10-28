@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Grafika Komputer — Pertemuan 6 (Three.js)</title>
+
+    <!-- Import Three.js via CDN ESM -->
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background-color: #0d0e12;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: #e2e8f0;
+        }
+
+        #app {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Minimalist Technical HUD */
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            background: rgba(18, 20, 26, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            padding: 16px;
+            width: 280px;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        }
+
+        .hud-title {
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: #38bdf8;
+            margin-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 6px;
+        }
+
+        .hud-stat {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            margin-bottom: 8px;
+            color: #94a3b8;
+        }
+
+        .hud-stat span.val {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            color: #f1f5f9;
+            font-weight: 600;
+        }
+
+        .controls-hint {
+            margin-top: 14px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            font-size: 11px;
+            color: #64748b;
+            line-height: 1.5;
+        }
+
+        .key-badge {
+            background: rgba(255, 255, 255, 0.1);
+            color: #e2e8f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 10px;
+        }
+
+        .btn-toggle {
+            margin-top: 10px;
+            width: 100%;
+            background: #0284c7;
+            color: #ffffff;
+            border: none;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+
+        .btn-toggle:hover {
+            background: #0369a1;
+        }
+
+        /* Floating Labels 3D */
+        .label-3d {
+            position: absolute;
+            z-index: 5;
+            transform: translate(-50%, -100%);
+            color: #94a3b8;
+            font-family: ui-monospace, monospace;
+            font-size: 10px;
+            letter-spacing: 0.05em;
+            pointer-events: none;
+            background: rgba(13, 14, 18, 0.7);
+            padding: 2px 6px;
+            border-radius: 3px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            white-space: nowrap;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="app">
+        <div id="hud">
+            <div class="hud-title">Three.js Mini Scene</div>
+
+            <div class="hud-stat">
+                <span>Active Camera</span>
+                <span id="cam-type" class="val">Perspective</span>
+            </div>
+            <div class="hud-stat">
+                <span>Cam Position</span>
+                <span id="cam-pos" class="val">0.0, 0.0, 0.0</span>
+            </div>
+            <div class="hud-stat">
+                <span>Scene Objects</span>
+                <span id="obj-count" class="val">0</span>
+            </div>
+
+            <button id="btn-cam" class="btn-toggle">Switch Camera (P)</button>
+
+            <div class="controls-hint">
+                • Tekan <span class="key-badge">P</span> untuk ganti kamera<br>
+                • Row Depan: <strong>Challenge A</strong> (Extra Geometries)<br>
+                • Row Belakang: <strong>Challenge B</strong> (Material Gallery)
+            </div>
+        </div>
+
+        <!-- 3D Labels container -->
+        <div id="labels-container"></div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // ----------------------------------------------------
+        // 1. SCENE SETUP
+        // ----------------------------------------------------
+        const container = document.getElementById('app');
+        const labelsContainer = document.getElementById('labels-container');
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0d0e12);
+        scene.fog = new THREE.FogExp2(0x0d0e12, 0.03);
+
+        const sizes = {
+            width: window.innerWidth,
+            height: window.innerHeight
+        };
+
+        // ----------------------------------------------------
+        // 2. CAMERAS (CHALLENGE C)
+        // ----------------------------------------------------
+        const aspect = sizes.width / sizes.height;
+
+        // Perspective Camera
+        const cameraPerspective = new THREE.PerspectiveCamera(50, aspect, 0.1, 100);
+        cameraPerspective.position.set(0, 5, 11);
+        cameraPerspective.lookAt(0, 0, 0);
+
+        // Orthographic Camera
+        const frustumSize = 10;
+        const cameraOrthographic = new THREE.OrthographicCamera(
+            (frustumSize * aspect) / -2,
+            (frustumSize * aspect) / 2,
+            frustumSize / 2,
+            frustumSize / -2,
+            0.1,
+            100
+        );
+        cameraOrthographic.position.set(0, 7.5, 11);
+        cameraOrthographic.lookAt(0, 0, 0);
+
+        let activeCamera = cameraPerspective;
+
+        // ----------------------------------------------------
+        // 3. RENDERER
+        // ----------------------------------------------------
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(sizes.width, sizes.height);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+
+        container.appendChild(renderer.domElement);
+
+        // ----------------------------------------------------
+        // 4. LIGHTING
+        // ----------------------------------------------------
+        const ambientLight = new THREE.AmbientLight(0xdbeafe, 0.4);
+        scene.add(ambientLight);
+
+        const mainLight = new THREE.DirectionalLight(0xffffff, 1.8);
+        mainLight.position.set(6, 10, 5);
+        mainLight.castShadow = true;
+        mainLight.shadow.mapSize.width = 2048;
+        mainLight.shadow.mapSize.height = 2048;
+        mainLight.shadow.camera.near = 0.5;
+        mainLight.shadow.camera.far = 25;
+        mainLight.shadow.camera.left = -8;
+        mainLight.shadow.camera.right = 8;
+        mainLight.shadow.camera.top = 8;
+        mainLight.shadow.camera.bottom = -8;
+        mainLight.shadow.bias = -0.0005;
+        scene.add(mainLight);
+
+        // Subtle Rim Light
+        const fillLight = new THREE.DirectionalLight(0x38bdf8, 0.6);
+        fillLight.position.set(-6, 3, -4);
+        scene.add(fillLight);
+
+        // ----------------------------------------------------
+        // 5. GROUND PLANE
+        // ----------------------------------------------------
+        const groundGeo = new THREE.PlaneGeometry(30, 30);
+        const groundMat = new THREE.MeshStandardMaterial({
+            color: 0x1e293b,
+            roughness: 0.8,
+            metalness: 0.2
+        });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -0.01;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Grid Helper (Engineering Style)
+        const gridHelper = new THREE.GridHelper(30, 30, 0x334155, 0x1e293b);
+        gridHelper.position.y = 0;
+        scene.add(gridHelper);
+
+        // ----------------------------------------------------
+        // 6. MAIN OBJECTS (TUGAS UTAMA)
+        // ----------------------------------------------------
+        // Main Cube
+        const cubeGeo = new THREE.BoxGeometry(1.2, 1.2, 1.2);
+        const cubeMat = new THREE.MeshLambertMaterial({ color: 0x0ea5e9 });
+        const mainCube = new THREE.Mesh(cubeGeo, cubeMat);
+        mainCube.position.set(-2, 0.6, 0.5);
+        mainCube.castShadow = true;
+        mainCube.receiveShadow = true;
+        scene.add(mainCube);
+
+        // Main Sphere
+        const sphereGeo = new THREE.SphereGeometry(0.7, 32, 32);
+        const sphereMat = new THREE.MeshPhongMaterial({ color: 0x6366f1, shininess: 80 });
+        const mainSphere = new THREE.Mesh(sphereGeo, sphereMat);
+        mainSphere.position.set(2, 0.7, 0.5);
+        mainSphere.castShadow = true;
+        mainSphere.receiveShadow = true;
+        scene.add(mainSphere);
+
+        // ----------------------------------------------------
+        // 7. CHALLENGE A: GEOMETRI TAMBAHAN
+        // ----------------------------------------------------
+        // Cylinder
+        const cylGeo = new THREE.CylinderGeometry(0.5, 0.5, 1.2, 32);
+        const cylMat = new THREE.MeshStandardMaterial({ color: 0x10b981, roughness: 0.4 });
+        const extraCylinder = new THREE.Mesh(cylGeo, cylMat);
+        extraCylinder.position.set(-3, 0.6, 3);
+        extraCylinder.castShadow = true;
+        scene.add(extraCylinder);
+
+        // Cone
+        const coneGeo = new THREE.ConeGeometry(0.6, 1.3, 32);
+        const coneMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.4 });
+        const extraCone = new THREE.Mesh(coneGeo, coneMat);
+        extraCone.position.set(0, 0.65, 3);
+        extraCone.castShadow = true;
+        scene.add(extraCone);
+
+        // Torus
+        const torusGeo = new THREE.TorusGeometry(0.5, 0.2, 16, 32);
+        const torusMat = new THREE.MeshStandardMaterial({ color: 0xec4899, roughness: 0.3 });
+        const extraTorus = new THREE.Mesh(torusGeo, torusMat);
+        extraTorus.position.set(3, 0.7, 3);
+        extraTorus.castShadow = true;
+        scene.add(extraTorus);
+
+        // ----------------------------------------------------
+        // 8. CHALLENGE B: MATERIAL GALLERY (ROW BELAKANG)
+        // ----------------------------------------------------
+        const matGeo = new THREE.SphereGeometry(0.55, 32, 32);
+        const matZ = -3;
+        const labelsData = [];
+
+        // 1. Basic
+        const mBasic = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+        const sphereBasic = new THREE.Mesh(matGeo, mBasic);
+        sphereBasic.position.set(-3, 0.55, matZ);
+        scene.add(sphereBasic);
+
+        // 2. Normal
+        const mNormal = new THREE.MeshNormalMaterial();
+        const sphereNormal = new THREE.Mesh(matGeo, mNormal);
+        sphereNormal.position.set(-1, 0.55, matZ);
+        scene.add(sphereNormal);
+
+        // 3. Lambert
+        const mLambert = new THREE.MeshLambertMaterial({ color: 0x3b82f6 });
+        const sphereLambert = new THREE.Mesh(matGeo, mLambert);
+        sphereLambert.position.set(1, 0.55, matZ);
+        sphereLambert.castShadow = true;
+        scene.add(sphereLambert);
+
+        // 4. Phong
+        const mPhong = new THREE.MeshPhongMaterial({ color: 0x8b5cf6, shininess: 100 });
+        const spherePhong = new THREE.Mesh(matGeo, mPhong);
+        spherePhong.position.set(3, 0.55, matZ);
+        spherePhong.castShadow = true;
+        scene.add(spherePhong);
+
+        // Set up HTML Labels for Material Gallery
+        const galleryItems = [
+            { obj: sphereBasic, text: 'MeshBasic' },
+            { obj: sphereNormal, text: 'MeshNormal' },
+            { obj: sphereLambert, text: 'MeshLambert' },
+            { obj: spherePhong, text: 'MeshPhong' }
+        ];
+
+        galleryItems.forEach(item => {
+            const el = document.createElement('div');
+            el.className = 'label-3d';
+            el.textContent = item.text;
+            labelsContainer.appendChild(el);
+            labelsData.push({ element: el, object: item.obj });
+        });
+
+        // ----------------------------------------------------
+        // 9. CONTROLS & CAMERA SWITCHING (CHALLENGE C)
+        // ----------------------------------------------------
+        function toggleCamera() {
+            if (activeCamera === cameraPerspective) {
+                activeCamera = cameraOrthographic;
+                document.getElementById('cam-type').textContent = 'Orthographic';
+            } else {
+                activeCamera = cameraPerspective;
+                document.getElementById('cam-type').textContent = 'Perspective';
+            }
+        }
+
+        document.getElementById('btn-cam').addEventListener('click', toggleCamera);
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'p' || e.key === 'P') {
+                toggleCamera();
+            }
+        });
+
+        // ----------------------------------------------------
+        // 10. RESIZE HANDLER
+        // ----------------------------------------------------
+        window.addEventListener('resize', () => {
+            sizes.width = window.innerWidth;
+            sizes.height = window.innerHeight;
+            const newAspect = sizes.width / sizes.height;
+
+            // Update Perspective
+            cameraPerspective.aspect = newAspect;
+            cameraPerspective.updateProjectionMatrix();
+
+            // Update Orthographic
+            cameraOrthographic.left = (frustumSize * newAspect) / -2;
+            cameraOrthographic.right = (frustumSize * newAspect) / 2;
+            cameraOrthographic.top = frustumSize / 2;
+            cameraOrthographic.bottom = frustumSize / -2;
+            cameraOrthographic.updateProjectionMatrix();
+
+            renderer.setSize(sizes.width, sizes.height);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        });
+
+        // ----------------------------------------------------
+        // 11. ANIMATION LOOP & HUD UPDATES
+        // ----------------------------------------------------
+        const clock = new THREE.Clock();
+        let elapsed = 0;
+
+        const camPosEl = document.getElementById('cam-pos');
+        const objCountEl = document.getElementById('obj-count');
+
+        // Count Mesh objects in scene
+        let meshCount = 0;
+        scene.traverse((child) => {
+            if (child.isMesh) meshCount++;
+        });
+        objCountEl.textContent = meshCount;
+
+        function updateLabelsPosition() {
+            const tempV = new THREE.Vector3();
+            labelsData.forEach(item => {
+                item.object.getWorldPosition(tempV);
+                tempV.y += 0.7; // Offset above sphere
+
+                // Project 3D pos to 2D Screen
+                tempV.project(activeCamera);
+
+                const x = (tempV.x * .5 + .5) * sizes.width;
+                const y = (tempV.y * -.5 + .5) * sizes.height;
+
+                item.element.style.transform = `translate(-50%, -100%) translate(${x}px,${y}px)`;
+
+                // Hide if behind camera plane
+                if (tempV.z > 1) {
+                    item.element.style.display = 'none';
+                } else {
+                    item.element.style.display = 'block';
+                }
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = Math.min(clock.getDelta(), 0.05);
+            elapsed += delta;
+
+            // Animasi Rotasi Halus
+            mainCube.rotation.x += 0.4 * delta;
+            mainCube.rotation.y += 0.6 * delta;
+
+            // Animasi Floating Sphere
+            mainSphere.position.y = 0.7 + Math.sin(elapsed * 2.5) * 0.15;
+            mainSphere.rotation.y += 0.3 * delta;
+
+            // Animasi Challenge A
+            extraCylinder.rotation.y += 0.5 * delta;
+            extraCone.rotation.y += 0.5 * delta;
+            extraTorus.rotation.x += 0.6 * delta;
+            extraTorus.rotation.y += 0.4 * delta;
+
+            // Rotasi ringan untuk Material Gallery
+            sphereBasic.rotation.y += 0.5 * delta;
+            sphereNormal.rotation.y += 0.5 * delta;
+            sphereLambert.rotation.y += 0.5 * delta;
+            spherePhong.rotation.y += 0.5 * delta;
+
+            // Render Scene
+            renderer.render(scene, activeCamera);
+
+            // Update HUD & Labels
+            camPosEl.textContent = `${activeCamera.position.x.toFixed(1)}, ${activeCamera.position.y.toFixed(1)}, ${activeCamera.position.z.toFixed(1)}`;
+            updateLabelsPosition();
+        }
+
+        animate();
+    </script>
+</body>
+
+</html>
